@@ -22,7 +22,7 @@ parser.add_argument('--training-bit', type=str, default='', help='weight number 
 parser.add_argument('--training-strategy', default='scratch', type=str, metavar='strategy',
                     choices=['scratch', 'checkpoint', 'checkpoint_from_zero', 'checkpoint_full_precision'])
 parser.add_argument('--checkpoint_epoch_full_precision', type=int, default=0, help='full precision')
-parser.add_argument('--clip-grad', type=str2bool, default=False, help='clip gradient to 0.01(CIFAR)')
+parser.add_argument('--clip-grad', type=float, default=10, help='clip gradient to 0.01(CIFAR)')
 parser.add_argument('--amp', action='store_true', help='Run model AMP (automatic mixed precision) mode.')
 
 parser.add_argument('--lr', type=float, default=0.1, help='clip gradient to 0.01(CIFAR)')
@@ -81,7 +81,7 @@ else:
 os.system("python ./main.py --arch preact_resnet56 --gather-checkpoints \
             --lr {} --resume {} --dataset cifar10 --momentum 0.9 --weight-decay {} --epoch 200\
             --warmup {} {}  ~/data/cifar10 --workspace ./results/cifar/{}/models \
-            {} --print-freq 100 --clip-grad {} \
+            {} --print-freq 200 --clip-grad {} \
             --bbits {} --bwbits {} --abits {} --wbits {} --lsqforward {} \
             --twolayers-gradweight {} --twolayers-gradinputt {} --clip-grad {}"
             .format(args.lr, model, args.weight_decay,

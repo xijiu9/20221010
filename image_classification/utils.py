@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import shutil
 import torch.distributed as dist
-
+import matplotlib.pyplot as plt
 
 def should_backup_checkpoint(args):
     def _sbc(epoch):
@@ -226,3 +226,27 @@ def checkNAN(x, s=''):
         print(x.shape)
         print(x)
         print(config.valid_history)
+
+def draw_maxmin(plt_list, cnt_plt, info, config):
+    os.makedirs(os.path.join(config.args.workspace, '..', 'plt_list', '{}'.format(config.epoch)), exist_ok=True)
+    plt_path = os.path.join(config.args.workspace, '..', 'plt_list', '{}'.format(config.epoch), '{}.png'.format(info))
+    plt_path_log = os.path.join(config.args.workspace, '..', 'plt_list', '{}'.format(config.epoch), '{}_log.png'.format(info))
+    plt.figure(0)
+    for idx, plst in enumerate(plt_list[info]):
+        maxx, minn = plst[0].cpu(), plst[1].cpu()
+        plt.scatter(maxx, 2 - idx / len(plt_list[info]), s=1, c='red')
+        plt.scatter(minn, 0 + idx / len(plt_list[info]), s=1, c='blue')
+    plt.title('{} {}'.format(config.epoch, info))
+    plt.savefig(plt_path)
+
+    plt.figure(1)
+    for idx, plst in enumerate(plt_list[info]):
+        maxx, minn = plst[0].cpu(), plst[1].cpu()
+        plt.scatter(np.log10(maxx.abs() + 1e-10), 2 - idx / len(plt_list[info]), s=1, c='red')
+        plt.scatter(-np.log10(minn.abs() + 1e-10), 0 + idx / len(plt_list[info]), s=1, c='blue')
+    plt.savefig(plt_path_log)
+
+    print("{} finish!".format(info))
+
+cnt_plt = {'conv_weight': 0, 'conv_active': 0, 'linear_weight': 0, 'linear_active': 0}
+list_plt = {'conv_weight': [], 'conv_active': [], 'linear_weight': [], 'linear_active': []}

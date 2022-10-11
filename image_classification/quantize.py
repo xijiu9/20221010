@@ -1,15 +1,20 @@
 from collections import namedtuple
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd.function import InplaceFunction
-from image_classification.preconditioner import ScalarPreconditioner, ScalarPreconditionerAct, TwoLayerPreconditioner
-
+from torch.nn.parameter import Parameter
 from torch.autograd.function import InplaceFunction, Function
+from image_classification.preconditioner import ScalarPreconditioner, ScalarPreconditionerAct, \
+    TwoLayerPreconditioner, lsq_per_tensor
+
 import actnn.cpp_extension.backward_func as ext_backward_func
 from image_classification.utils import twolayer_linearsample_weight, twolayer_convsample_weight, \
-        twolayer_linearsample_input, twolayer_convsample_input
+        twolayer_linearsample_input, twolayer_convsample_input, cnt_plt, list_plt, draw_maxmin
 # from image_classification.utils import checkNAN, checkAbsmean, cnt_plt, list_plt, draw_maxmin
+
+
 
 class QuantizationConfig:
     def __init__(self):
@@ -26,6 +31,9 @@ class QuantizationConfig:
         self.acts = None
         self.biprecision = True
 
+        self.args = None
+        self.epoch = 0
+
         self.twolayers_gradweight = False
         self.twolayers_gradinputt = False
         self.lsqforward = False
@@ -39,14 +47,14 @@ class QuantizationConfig:
     def bias_preconditioner(self):
         return lambda x: ScalarPreconditioner(x, self.bias_num_bits)
 
-    def activation_gradient_preconditioner(self):
-        if self.twolayers_gradinputt:
+    def activation_gradient_preconditioner(self, first_layer=False):
+        if self.twolayers_gradinputt and not first_layer:
             return lambda x: TwoLayerPreconditioner(x, self.backward_num_bits)
         else:
             return lambda x: ScalarPreconditioner(x, self.backward_num_bits)
 
-    def weight_gradient_preconditioner(self):
-        if self.twolayers_gradweight:
+    def weight_gradient_preconditioner(self, first_layer=False):
+        if self.twolayers_gradweight and not first_layer:
             return lambda x: TwoLayerPreconditioner(x, self.bweight_num_bits)
         else:
             return lambda x: ScalarPreconditioner(x, self.bweight_num_bits)
@@ -89,14 +97,14 @@ class UniformQuantize(InplaceFunction):
 
             inverse_output = preconditioner.inverse(output)
 
-            # threshold = {'conv_weight': 1100, 'conv_active': 1100, 'linear_weight': 20, 'linear_active': 20}
-            # if info != '' and cnt_plt[info] < threshold[info]:
-            #     cnt_plt[info] += 1
-            #     list_plt[info].append([inverse_output.max(), inverse_output.min()])
-            #
-            # if info != '' and cnt_plt[info] == threshold[info]:
-            #     cnt_plt[info] += 1
-            #     draw_maxmin(list_plt, cnt_plt, info)
+            threshold = {'conv_weight': 1100, 'conv_active': 1100, 'linear_weight': 20, 'linear_active': 20}
+            if info != '' and cnt_plt[info] < threshold[info]:
+                cnt_plt[info] += 1
+                list_plt[info].append([inverse_output.max(), inverse_output.min()])
+
+            if info != '' and cnt_plt[info] == threshold[info]:
+                cnt_plt[info] += 1
+                draw_maxmin(list_plt, cnt_plt, info, config)
 
 
         # if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
@@ -118,10 +126,11 @@ def quantize(x, Preconditioner, stochastic=False, inplace=False, debug=False, in
 
 class conv2d_act(Function):
     @staticmethod
-    def forward(ctx, input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
+    def forward(ctx, input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1, first_layer=False):
         ctx.saved = input, weight, bias
         ctx.other_args = stride, padding, dilation, groups
         ctx.inplace = False
+        ctx.first_layer = first_layer
         return F.conv2d(input, weight, bias, stride, padding, dilation, groups)
 
     @staticmethod
@@ -132,10 +141,13 @@ class conv2d_act(Function):
         # torch.save(grad_output, 'image_classification/ckpt/grad_output_conv_180.pt')
         # print('*'*100)
         # checkAbsmean("conv start", grad_output)
-        grad_output_weight_condi = quantize(grad_output, config.weight_gradient_preconditioner(), stochastic=True,
+
+        first_layer = ctx.first_layer
+
+        grad_output_weight_condi = quantize(grad_output, config.weight_gradient_preconditioner(first_layer), stochastic=True,
                                             info='conv_weight')
 
-        grad_output_active_condi = quantize(grad_output, config.activation_gradient_preconditioner(),
+        grad_output_active_condi = quantize(grad_output, config.activation_gradient_preconditioner(first_layer),
                                             stochastic=True, info='conv_active')
 
         input, weight, bias = ctx.saved
@@ -144,7 +156,7 @@ class conv2d_act(Function):
         # torch.save(
         #     {"input": input, "weight": weight, "bias": bias, "stride": stride, "padding": padding, "dilation": dilation
         #         , "groups": groups}, 'image_classification/ckpt/inputs_conv_180.pt')
-        if config.twolayers_gradweight:
+        if config.twolayers_gradweight and not first_layer:
             input_sample, grad_output_weight_condi_sample = twolayer_convsample_weight(
                 torch.cat([input, input], dim=0), grad_output_weight_condi)
 
@@ -160,7 +172,7 @@ class conv2d_act(Function):
                 True, False, False,  # ?
                 [False, True])
 
-        if config.twolayers_gradinputt:
+        if config.twolayers_gradinputt and not first_layer:
             # checkAbsmean("grad_active_condi", grad_output_active_condi)
             grad_output_active_sample = twolayer_convsample_input(grad_output_active_condi, config)
             # checkAbsmean("grad_active_sample", grad_output_active_sample)
@@ -183,7 +195,7 @@ class conv2d_act(Function):
             grad_bias = None
 
         # checkNAN(grad_input, 'grad_input')
-        return grad_input, grad_weight, grad_bias, None, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None, None
 
 
 class linear_act(Function):
@@ -229,15 +241,6 @@ class linear_act(Function):
         if config.twolayers_gradinputt:
             I = torch.eye(input.shape[0], device="cuda")
             grad_input = twolayer_linearsample_input(grad_output_flatten_active, I)
-            #
-            # N = torch.isnan(grad_input)
-            # cN = torch.count_nonzero(N)
-            # if cN != 0:
-            #     print("Linear Input")
-            #     print(cN)
-            #     print(grad_input.shape)
-            #     print(grad_input)
-            #     exit(0)
 
             grad_input = grad_input.mm(weight)
         else:
@@ -247,15 +250,7 @@ class linear_act(Function):
             grad_bias = grad_output_flatten.sum(0)
         else:
             grad_bias = None
-        #
-        # N = torch.isnan(grad_input)
-        # cN = torch.count_nonzero(N)
-        # if cN != 0:
-        #     print("Linear Linear")
-        #     print(cN)
-        #     print(grad_input.shape)
-        #     print(grad_input)
-        #     exit(0)
+
         return grad_input, grad_weight, grad_bias
 
 
@@ -315,15 +310,15 @@ class QConv2d(nn.Conv2d):
     """docstring for QConv2d."""
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1, bias=True, first_or_last=False, symm=True):
+                 stride=1, padding=0, dilation=1, groups=1, bias=True, first_layer=False, symm=True):
         super(QConv2d, self).__init__(in_channels, out_channels, kernel_size,
                                       stride, padding, dilation, groups, bias)
         self.quantize_input = QuantMeasure()
-        self.first_or_last = first_or_last
+        self.first_layer = first_layer
         self.symm = symm
-        if first_or_last:
+        if first_layer:
             print("ohhhhhhh conv")
-        if config.lsqforward and not self.first_or_last:
+        if config.lsqforward and not self.first_layer:
             self.lsqweight = LSQPerTensor(config.weight_num_bits, inputtype="weight")
             self.lsqactive = LSQPerTensor(config.activation_num_bits, symm=symm, inputtype="activation")
 
@@ -334,7 +329,7 @@ class QConv2d(nn.Conv2d):
         if config.acts is not None:
             config.acts.append(input.detach().cpu().numpy())
 
-        if config.quantize_activation and not self.first_or_last:
+        if config.quantize_activation and not self.first_layer:
             if config.lsqforward:
                 qinput = self.lsqactive(input)
             else:
@@ -343,7 +338,7 @@ class QConv2d(nn.Conv2d):
         else:
             qinput = input
         # torch.save(self.weight, 'image_classification/debug_tensor/weight.pt')
-        if config.quantize_weights and not self.first_or_last:  # TODO weight quantization scheme...
+        if config.quantize_weights and not self.first_layer:  # TODO weight quantization scheme...
             if config.lsqforward:
                 qweight = self.lsqweight(self.weight)
             else:
@@ -361,7 +356,7 @@ class QConv2d(nn.Conv2d):
                               self.padding, self.dilation, self.groups)
         else:
             output = conv2d_act.apply(qinput, qweight, qbias, self.stride,
-                                      self.padding, self.dilation, self.groups)
+                                      self.padding, self.dilation, self.groups, self.first_layer)
 
         self.act = output
 
@@ -371,19 +366,17 @@ class QConv2d(nn.Conv2d):
 class QLinear(nn.Linear):
     """docstring for QConv2d."""
 
-    def __init__(self, in_features, out_features, bias=True, first_or_last=False, symm=True):
+    def __init__(self, in_features, out_features, bias=True, symm=True):
         super(QLinear, self).__init__(in_features, out_features, bias)
         self.quantize_input = QuantMeasure()
-        self.first_or_last = first_or_last
-        if first_or_last:
-            print("ohhhhhhh linear")
-        if config.lsqforward and not self.first_or_last:
+
+        if config.lsqforward:
             self.lsqweight = LSQPerTensor(config.weight_num_bits, inputtype="weight")
             self.lsqactive = LSQPerTensor(config.activation_num_bits, symm=symm, inputtype="activation")
 
     def forward(self, input):
 
-        if config.quantize_activation and not self.first_or_last:
+        if config.quantize_activation:
             if config.lsqforward:
                 qinput = self.lsqactive(input)
             else:
@@ -391,7 +384,7 @@ class QLinear(nn.Linear):
         else:
             qinput = input
 
-        if config.quantize_weights and not self.first_or_last:  # TODO weight quantization scheme...
+        if config.quantize_weights:  # TODO weight quantization scheme...
             if config.lsqforward:
                 qweight = self.lsqweight(self.weight)
             else:

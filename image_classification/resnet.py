@@ -7,6 +7,7 @@ from .preact_resnet import PreActBlock, PreActBottleneck, PreActResNet
 
 __all__ = ['ResNet', 'build_resnet', 'resnet_versions', 'resnet_configs']
 
+
 # ResNetBuilder {{{
 
 class ResNetBuilder(object):
@@ -16,47 +17,63 @@ class ResNetBuilder(object):
         self.L = sum(version['layers'])
         self.M = version['block'].M
 
-    def conv(self, kernel_size, in_planes, out_planes, stride=1):
-        if kernel_size == 3:
-            conv = self.config['conv'](in_planes, out_planes, kernel_size=3, stride=stride,
-                                       padding=1, bias=False)
-        elif kernel_size == 1:
-            conv = self.config['conv'](in_planes, out_planes, kernel_size=1, stride=stride,
-                                       bias=False)
-        elif kernel_size == 5:
-            conv = self.config['conv'](in_planes, out_planes, kernel_size=5, stride=stride,
-                                       padding=2, bias=False)
-        elif kernel_size == 7:
-            conv = self.config['conv'](in_planes, out_planes, kernel_size=7, stride=stride,
-                                       padding=3, bias=False)
-        else:
-            return None
+    def conv(self, kernel_size, in_planes, out_planes, stride=1, first_layer=False, symm=True):
+        if self.config['conv'] == QConv2d:
+            if kernel_size == 3:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=3, stride=stride,
+                                           padding=1, bias=False, first_layer=first_layer, symm=symm)
+            elif kernel_size == 1:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=1, stride=stride,
+                                           bias=False, first_layer=first_layer, symm=symm)
+            elif kernel_size == 5:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=5, stride=stride,
+                                           padding=2, bias=False, first_layer=first_layer, symm=symm)
+            elif kernel_size == 7:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=7, stride=stride,
+                                           padding=3, bias=False, first_layer=first_layer, symm=symm)
+            else:
+                return None
+        elif self.config['conv'] == nn.Conv2d:
+            if kernel_size == 3:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=3, stride=stride,
+                                           padding=1, bias=False)
+            elif kernel_size == 1:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=1, stride=stride,
+                                           bias=False)
+            elif kernel_size == 5:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=5, stride=stride,
+                                           padding=2, bias=False)
+            elif kernel_size == 7:
+                conv = self.config['conv'](in_planes, out_planes, kernel_size=7, stride=stride,
+                                           padding=3, bias=False)
+            else:
+                return None
 
         if self.config['nonlinearity'] == 'relu':
             nn.init.kaiming_normal_(conv.weight,
-                    mode=self.config['conv_init'],
-                    nonlinearity=self.config['nonlinearity'])
+                                    mode=self.config['conv_init'],
+                                    nonlinearity=self.config['nonlinearity'])
 
         return conv
 
-    def conv3x3(self, in_planes, out_planes, stride=1):
+    def conv3x3(self, in_planes, out_planes, stride=1, first_layer=False, symm=True):
         """3x3 convolution with padding"""
-        c = self.conv(3, in_planes, out_planes, stride=stride)
+        c = self.conv(3, in_planes, out_planes, stride=stride, first_layer=first_layer, symm=symm)
         return c
 
-    def conv1x1(self, in_planes, out_planes, stride=1):
+    def conv1x1(self, in_planes, out_planes, stride=1, first_layer=False, symm=True):
         """1x1 convolution with padding"""
-        c = self.conv(1, in_planes, out_planes, stride=stride)
+        c = self.conv(1, in_planes, out_planes, stride=stride, first_layer=first_layer, symm=symm)
         return c
 
-    def conv7x7(self, in_planes, out_planes, stride=1):
+    def conv7x7(self, in_planes, out_planes, stride=1, first_layer=False, symm=True):
         """7x7 convolution with padding"""
-        c = self.conv(7, in_planes, out_planes, stride=stride)
+        c = self.conv(7, in_planes, out_planes, stride=stride, first_layer=first_layer, symm=symm)
         return c
 
-    def conv5x5(self, in_planes, out_planes, stride=1):
+    def conv5x5(self, in_planes, out_planes, stride=1, first_layer=False, symm=True):
         """5x5 convolution with padding"""
-        c = self.conv(5, in_planes, out_planes, stride=stride)
+        c = self.conv(5, in_planes, out_planes, stride=stride, first_layer=first_layer, symm=symm)
         return c
 
     def batchnorm(self, planes, last_bn=False):
@@ -69,11 +86,15 @@ class ResNetBuilder(object):
 
         return bn
 
-    def linear(self, in_planes, out_planes):
-        return self.config['linear'](in_planes, out_planes)
+    def linear(self, in_planes, out_planes, symm=True):
+        if self.config['linear'] == QLinear:
+            return self.config['linear'](in_planes, out_planes, symm=symm)
+        elif self.config['linear'] == nn.Linear:
+            return self.config['linear'](in_planes, out_planes)
 
     def activation(self):
         return self.config['activation']()
+
 
 # ResNetBuilder }}}
 
@@ -113,6 +134,8 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
 
         return out
+
+
 # BasicBlock }}}
 
 # Bottleneck {{{
@@ -181,6 +204,8 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
 
         return out
+
+
 # Bottleneck }}}
 
 # ResNet {{{
@@ -188,7 +213,7 @@ class ResNet(nn.Module):
     def __init__(self, builder, block, layers, num_classes=1000):
         self.inplanes = 64
         super(ResNet, self).__init__()
-        self.conv1 = builder.conv7x7(3, 64, stride=2)
+        self.conv1 = builder.conv7x7(3, 64, stride=2, first_layer=True)
         self.bn1 = builder.batchnorm(64)
         self.relu = builder.activation()
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -247,110 +272,110 @@ class ResNet(nn.Module):
 
 
 resnet_configs = {
-        'classic' : {
-            'conv' : nn.Conv2d,
-            'linear' : nn.Linear,
-            'bn' : nn.BatchNorm2d,
-            'conv_init' : 'fan_out',
-            'nonlinearity' : 'relu',
-            'last_bn_0_init' : False,
-            'activation' : lambda: nn.ReLU(inplace=True),
-            'quantize_forward': False
-            },
-        'fanin' : {
-            'conv' : nn.Conv2d,
-            'linear' : nn.Linear,
-            'bn' : nn.BatchNorm2d,
-            'conv_init' : 'fan_in',
-            'nonlinearity' : 'relu',
-            'last_bn_0_init' : False,
-            'activation' : lambda: nn.ReLU(inplace=True),
-            'quantize_forward': False
-            },
-        'quantize' : {
-            'conv' : QConv2d,
-            'linear' : QLinear,
-            'bn' : QBatchNorm2D,
-            'conv_init' : 'fan_in',
-            'nonlinearity' : 'relu',
-            'last_bn_0_init' : False,
-            'activation' : lambda: nn.ReLU(inplace=True),
-            'quantize_forward': True
-            },
-        'qlinear' : {
-            'conv' : QConv2d,
-            'linear' : QLinear,
-            'bn' : nn.BatchNorm2d,
-            'conv_init' : 'fan_in',
-            'nonlinearity' : 'relu',
-            'last_bn_0_init' : False,
-            'activation' : lambda: nn.ReLU(inplace=True),
-            'quantize_forward': True
-            },
-        }
+    'classic': {
+        'conv': nn.Conv2d,
+        'linear': nn.Linear,
+        'bn': nn.BatchNorm2d,
+        'conv_init': 'fan_out',
+        'nonlinearity': 'relu',
+        'last_bn_0_init': False,
+        'activation': lambda: nn.ReLU(inplace=True),
+        'quantize_forward': False
+    },
+    'fanin': {
+        'conv': nn.Conv2d,
+        'linear': nn.Linear,
+        'bn': nn.BatchNorm2d,
+        'conv_init': 'fan_in',
+        'nonlinearity': 'relu',
+        'last_bn_0_init': False,
+        'activation': lambda: nn.ReLU(inplace=True),
+        'quantize_forward': False
+    },
+    'quantize': {
+        'conv': QConv2d,
+        'linear': QLinear,
+        'bn': QBatchNorm2D,
+        'conv_init': 'fan_in',
+        'nonlinearity': 'relu',
+        'last_bn_0_init': False,
+        'activation': lambda: nn.ReLU(inplace=True),
+        'quantize_forward': True
+    },
+    'qlinear': {
+        'conv': QConv2d,
+        'linear': QLinear,
+        'bn': nn.BatchNorm2d,
+        'conv_init': 'fan_in',
+        'nonlinearity': 'relu',
+        'last_bn_0_init': False,
+        'activation': lambda: nn.ReLU(inplace=True),
+        'quantize_forward': True
+    },
+}
 
 resnet_versions = {
-        'resnet18' : {
-            'net' : ResNet,
-            'block' : BasicBlock,
-            'layers' : [2, 2, 2, 2],
-            'num_classes' : 1000,
-            },
-         'resnet34' : {
-            'net' : ResNet,
-            'block' : BasicBlock,
-            'layers' : [3, 4, 6, 3],
-            'num_classes' : 1000,
-            },
-         'resnet50' : {
-            'net' : ResNet,
-            'block' : Bottleneck,
-            'layers' : [3, 4, 6, 3],
-            'num_classes' : 1000,
-            },
-        'resnet101' : {
-            'net' : ResNet,
-            'block' : Bottleneck,
-            'layers' : [3, 4, 23, 3],
-            'num_classes' : 1000,
-            },
-        'resnet152' : {
-            'net' : ResNet,
-            'block' : Bottleneck,
-            'layers' : [3, 8, 36, 3],
-            'num_classes' : 1000,
-            },
-        'preact_resnet20' : {
-            'net' : PreActResNet,
-            'block' : PreActBlock,
-            'layers' : [3, 3, 3],
-            'num_classes' : 10,
-            },
-        'preact_resnet56' : {
-            'net' : PreActResNet,
-            'block' : PreActBlock,
-            'layers' : [9, 9, 9],
-            'num_classes' : 10,
-            },
-        'preact_resnet110' : {
-            'net' : PreActResNet,
-            'block' : PreActBlock,
-            'layers' : [18, 18, 18],
-            'num_classes' : 10,
-            },
-        'preact_resnet164' : {
-            'net' : PreActResNet,
-            'block' : PreActBottleneck,
-            'layers' : [18, 18, 18],
-            'num_classes' : 10,
-            },
-        'preact_resnet1001' : {
-            'net' : PreActResNet,
-            'block' : PreActBottleneck,
-            'layers' : [111, 111, 111],
-            'num_classes' : 10,
-            },
-        }
+    'resnet18': {
+        'net': ResNet,
+        'block': BasicBlock,
+        'layers': [2, 2, 2, 2],
+        'num_classes': 1000,
+    },
+    'resnet34': {
+        'net': ResNet,
+        'block': BasicBlock,
+        'layers': [3, 4, 6, 3],
+        'num_classes': 1000,
+    },
+    'resnet50': {
+        'net': ResNet,
+        'block': Bottleneck,
+        'layers': [3, 4, 6, 3],
+        'num_classes': 1000,
+    },
+    'resnet101': {
+        'net': ResNet,
+        'block': Bottleneck,
+        'layers': [3, 4, 23, 3],
+        'num_classes': 1000,
+    },
+    'resnet152': {
+        'net': ResNet,
+        'block': Bottleneck,
+        'layers': [3, 8, 36, 3],
+        'num_classes': 1000,
+    },
+    'preact_resnet20': {
+        'net': PreActResNet,
+        'block': PreActBlock,
+        'layers': [3, 3, 3],
+        'num_classes': 10,
+    },
+    'preact_resnet56': {
+        'net': PreActResNet,
+        'block': PreActBlock,
+        'layers': [9, 9, 9],
+        'num_classes': 10,
+    },
+    'preact_resnet110': {
+        'net': PreActResNet,
+        'block': PreActBlock,
+        'layers': [18, 18, 18],
+        'num_classes': 10,
+    },
+    'preact_resnet164': {
+        'net': PreActResNet,
+        'block': PreActBottleneck,
+        'layers': [18, 18, 18],
+        'num_classes': 10,
+    },
+    'preact_resnet1001': {
+        'net': PreActResNet,
+        'block': PreActBottleneck,
+        'layers': [111, 111, 111],
+        'num_classes': 10,
+    },
+}
 
 
 def build_resnet(version, config, model_state=None):

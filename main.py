@@ -4,7 +4,6 @@ import shutil
 import time
 import random
 import warnings
-
 warnings.filterwarnings("ignore", category=UserWarning)
 import numpy as np
 import torch
@@ -158,7 +157,7 @@ def add_parser_arguments(parser):
     parser.add_argument('--twolayers-gradweight', type=str2bool, default=False, help='use two 4 bit to simulate a 8 bit')
     parser.add_argument('--twolayers-gradinputt', type=str2bool, default=False, help='use two 4 bit to simulate a 8 bit')
     parser.add_argument('--lsqforward', type=str2bool, default=False, help='apply LSQ')
-    parser.add_argument('--clip-grad', type=str2bool, default=False, help='clip gradient')
+    parser.add_argument('--clip-grad', type=float, default=10, help='clip gradient')
 
 def main(args):
     config.quantize_activation = args.qa

@@ -301,14 +301,20 @@ class StdOutBackend(object):
         pass
 
 class PLTLOGGER(object):
-    def __init__(self, save_path):
+    def __init__(self, save_path, dataset=''):
         self.save_path = save_path
         self.plt_epoch = []
         self.plt_prec1 = []
+        self.dataset = dataset
 
     def plt_valid(self, epoch=None, prec=None):
         self.plt_epoch.append(epoch)
         self.plt_prec1.append(prec)
+
+        if self.dataset == 'cifar10':
+            plt.ylim(80, 94)
+        elif self.dataset == 'imagenet':
+            plt.ylim(45, 72)
         plt.scatter(self.plt_epoch, self.plt_prec1, s=2)
         plt.title(max(self.plt_prec1))
         plt.savefig(os.path.join(self.save_path, 'valid_curve.png'))

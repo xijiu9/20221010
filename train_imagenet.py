@@ -22,7 +22,7 @@ parser.add_argument('--training-bit', type=str, default='', help='weight number 
 parser.add_argument('--training-strategy', default='scratch', type=str, metavar='strategy',
                     choices=['scratch', 'checkpoint', 'checkpoint_from_zero', 'checkpoint_full_precision'])
 parser.add_argument('--checkpoint_epoch_full_precision', type=int, default=0, help='full precision')
-parser.add_argument('--clip-grad', type=str2bool, default=False, help='clip gradient')
+parser.add_argument('--clip-grad', type=float, default=10, help='clip gradient')
 parser.add_argument('--amp', action='store_true', help='Run model AMP (automatic mixed precision) mode.')
 
 parser.add_argument('--arch', type=str, default='resnet50', help='clip gradient to 0.01(CIFAR)')

@@ -11,6 +11,9 @@ from .debug import dump, fast_dump, plot_bin_hist, write_errors, fast_dump_2, va
     plot_weight_hist
 import time
 import matplotlib.pyplot as plt
+import warnings
+from image_classification.quantize import config
+
 try:
     from apex.parallel import DistributedDataParallel as DDP
     from apex.fp16_utils import *
@@ -163,7 +166,8 @@ def lr_exponential_policy(base_lr, warmup_length, epochs, final_multiplier=0.001
     return lr_policy(_lr_fn, logger=logger)
 
 
-def get_train_step(model_and_loss, optimizer, fp16, use_amp=False, batch_size_multiplier=1, clip_grad=False, dataset=''):
+def get_train_step(model_and_loss, optimizer, fp16, use_amp=False, batch_size_multiplier=1, clip_grad=10,
+                   dataset=''):
     def _step(input, target, optimizer_step=True):
         input_var = Variable(input)
         target_var = Variable(target)
@@ -186,9 +190,8 @@ def get_train_step(model_and_loss, optimizer, fp16, use_amp=False, batch_size_mu
             loss.backward()
 
         if optimizer_step:
-            if clip_grad:
-                if dataset == 'cifar10':
-                    torch.nn.utils.clip_grad_value_(model_and_loss.model.parameters(), 0.01)
+            if dataset == 'cifar10':
+                torch.nn.utils.clip_grad_value_(model_and_loss.model.parameters(), clip_grad)
 
             opt = optimizer.optimizer if isinstance(optimizer, FP16_Optimizer) else optimizer
             for param_group in opt.param_groups:
@@ -206,7 +209,7 @@ def get_train_step(model_and_loss, optimizer, fp16, use_amp=False, batch_size_mu
 
 
 def train(train_loader, model_and_loss, optimizer, lr_scheduler, fp16, logger, epoch, use_amp=False, prof=-1,
-          batch_size_multiplier=1, register_metrics=True, clip_grad=False, dataset=''):
+          batch_size_multiplier=1, register_metrics=True, clip_grad=10, dataset=''):
     if register_metrics and logger is not None:
         logger.register_metric('train.top1', log.AverageMeter(), log_level=0)
         logger.register_metric('train.top5', log.AverageMeter(), log_level=0)
@@ -340,12 +343,16 @@ def train_loop(model_and_loss, optimizer, lr_scheduler, train_loader, val_loader
     prec1 = -1
 
     epoch_iter = range(start_epoch, epochs)
-    plt_log = log.PLTLOGGER(os.path.join(args.workspace, '..'))
+    plt_log = log.PLTLOGGER(os.path.join(args.workspace, '..'), args.dataset)
+    config.args = args
 
     if logger is not None:
         epoch_iter = logger.epoch_generator_wrapper(epoch_iter)
     for epoch in epoch_iter:
-        print('Epoch ', epoch)
+        config.epoch = epoch
+        time_tuple = time.localtime(time.time())
+        print('Epoch {} at Time {}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}:'
+              .format(epoch, time_tuple[0], time_tuple[1], time_tuple[2], time_tuple[3], time_tuple[4], time_tuple[5]))
         start_time = time.time()
         if not skip_training:
             train(train_loader, model_and_loss, optimizer, lr_scheduler, fp16, logger, epoch, use_amp=use_amp,
@@ -378,6 +385,9 @@ def train_loop(model_and_loss, optimizer, lr_scheduler, train_loader, val_loader
             logger.end()
         end_time = time.time()
         print("Time Cost: {} s".format(end_time - start_time))
+
+    print(plt_log.plt_prec1)
+    print("The best acc is {}".format(max(plt_log.plt_prec1)))
     if skip_training:
         # fast_dump_2(model_and_loss, optimizer, train_loader, checkpoint_dir)
         # dump(model_and_loss, optimizer, train_loader, checkpoint_dir)

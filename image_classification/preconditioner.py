@@ -1,6 +1,7 @@
 import torch
 import math
 import time
+import numpy as np
 import pytorch_minimax
 
 
@@ -17,7 +18,7 @@ Qmax = [1.0, 1.0]
 
 
 def init(max_bs):
-    for i in range(2, max_bs+1):
+    for i in range(2, max_bs + 1):
         e1 = torch.zeros(i)
         e1[0] = 1
         ones = torch.ones(i) / math.sqrt(i)
@@ -101,6 +102,7 @@ class ScalarPreconditionerAct(Preconditioner):
     def inverse_transform(self, x):
         return x / self.scale + self.zero_point
 
+
 class TwoLayerPreconditioner(Preconditioner):
     # Y = D (Y - z 1^\top)
     # X = D^-1 Y + z 1^\top
@@ -153,7 +155,6 @@ class TwoLayerPreconditioner(Preconditioner):
 
             mx = (iqzero - self.num_bins) * mn / iqzero
             self.scale1 = self.num_bins / (mx - mn)
-
 
         first_transform = (x - self.zero_point1) * self.scale1
         # noise = first_transform.new(first_transform.shape).uniform_(-0.5, 0.5)
@@ -219,7 +220,45 @@ class TwoLayerPreconditioner(Preconditioner):
         # print("dequantize shape:{}".format(dequantize.shape))
         # print("input is {}, dequantize is {}, difference is ".format(x, dequantize, x-dequantize))
         if torch.isnan(dequantize[0, 0]):
-            print("scale1 is {}, scale2 is {}, zero 1 {}, zero 2 {}".format(self.scale1, self.scale2, self.zero_point1, self.zero_point2))
+            print("scale1 is {}, scale2 is {}, zero 1 {}, zero 2 {}".format(self.scale1, self.scale2, self.zero_point1,
+                                                                            self.zero_point2))
 
         return dequantize
 
+
+class lsq_per_tensor(torch.autograd.Function):
+
+    @staticmethod
+    def forward(ctx, input, scale, config, bits, symm, inputtype=''):
+        num_bins = 2 ** bits - 1
+        bias = -num_bins / 2 if symm else 0
+        num_features = input.numel()
+        grad_scale = 1.0 / np.sqrt(num_features * num_bins)
+        # grad_scale = 1.0 / np.sqrt(num_features)
+
+        # Forward
+        eps = 1e-7
+        scale = scale + eps
+        transformed = input / scale - bias
+        vbar = torch.clamp(transformed, 0.0, num_bins).round()
+        quantized = (vbar + bias) * scale
+
+        # Step size gradient
+        error = vbar - transformed
+        mask = torch.logical_and(transformed >= 0, transformed <= num_bins)
+        case1 = (transformed < 0).float() * bias
+        case2 = mask.float() * error
+        case3 = (transformed > num_bins).float() * (bias + num_bins)
+        # TODO gradient scale might be too small, so optimizing without AdaGrad might be problematic...
+        ss_gradient = (case1 + case2 + case3) * grad_scale  # * 100 * scale
+        ctx.save_for_backward(mask, ss_gradient)
+        ctx.others = config, inputtype
+        return quantized
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        mask, ss_gradient = ctx.saved_tensors
+        config, inputtype = ctx.others
+        # if config.epoch < config.freeze_step and inputtype == "activation":
+        #     return grad_output * mask.float(), (grad_output * ss_gradient).sum() * config.epoch / config.freeze_step, None, None, None, None
+        return grad_output * mask.float(), (grad_output * ss_gradient).sum(), None, None, None, None
