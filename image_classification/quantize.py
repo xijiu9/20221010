@@ -97,14 +97,14 @@ class UniformQuantize(InplaceFunction):
 
             inverse_output = preconditioner.inverse(output)
 
-            threshold = {'conv_weight': 1100, 'conv_active': 1100, 'linear_weight': 20, 'linear_active': 20}
-            if info != '' and cnt_plt[info] < threshold[info]:
-                cnt_plt[info] += 1
-                list_plt[info].append([inverse_output.max(), inverse_output.min()])
-
-            if info != '' and cnt_plt[info] == threshold[info]:
-                cnt_plt[info] += 1
-                draw_maxmin(list_plt, cnt_plt, info, config)
+            # threshold = {'conv_weight': 1100, 'conv_active': 1100, 'linear_weight': 20, 'linear_active': 20}
+            # if info != '' and cnt_plt[info] < threshold[info]:
+            #     cnt_plt[info] += 1
+            #     list_plt[info].append([inverse_output.max(), inverse_output.min()])
+            #
+            # if info != '' and cnt_plt[info] == threshold[info]:
+            #     cnt_plt[info] += 1
+            #     draw_maxmin(list_plt, cnt_plt, info, config)
 
 
         # if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:

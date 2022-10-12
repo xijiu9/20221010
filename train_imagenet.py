@@ -26,7 +26,7 @@ parser.add_argument('--clip-grad', type=float, default=10, help='clip gradient')
 parser.add_argument('--amp', action='store_true', help='Run model AMP (automatic mixed precision) mode.')
 
 parser.add_argument('--arch', type=str, default='resnet50', help='clip gradient to 0.01(CIFAR)')
-parser.add_argument('--gpu-num', type=str2bool, default=8, help='clip gradient to 0.01(CIFAR)')
+parser.add_argument('--gpu-num', type=int, default=8, help='clip gradient to 0.01(CIFAR)')
 parser.add_argument('--lr', type=float, default=1.024, help='clip gradient to 0.01(CIFAR)')
 parser.add_argument('--weight-decay', '--wd', default=3.0517578125e-05, type=float, metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('--batch-size', type=int, default=128, help='clip gradient to 0.01(CIFAR)')

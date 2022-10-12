@@ -4,6 +4,8 @@ import torch
 import shutil
 import torch.distributed as dist
 import matplotlib.pyplot as plt
+import random
+import numpy as np
 
 def should_backup_checkpoint(args):
     def _sbc(epoch):
@@ -250,3 +252,9 @@ def draw_maxmin(plt_list, cnt_plt, info, config):
 
 cnt_plt = {'conv_weight': 0, 'conv_active': 0, 'linear_weight': 0, 'linear_active': 0}
 list_plt = {'conv_weight': [], 'conv_active': [], 'linear_weight': [], 'linear_active': []}
+
+def set_seed(seed, local_rank):
+    torch.manual_seed(seed + local_rank)
+    torch.cuda.manual_seed(seed + local_rank)
+    np.random.seed(seed=seed + local_rank)
+    random.seed(seed + local_rank)

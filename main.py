@@ -114,7 +114,7 @@ def add_parser_arguments(parser):
 
     parser.add_argument("--local_rank", default=0, type=int)
 
-    parser.add_argument('--seed', default=None, type=int,
+    parser.add_argument('--seed', default=2000, type=int,
                         help='random seed used for np and pytorch')
 
     parser.add_argument('--gather-checkpoints', action='store_true',
@@ -199,11 +199,7 @@ def main(args):
         exit(1)
 
     if args.seed is not None:
-        print("Using seed = {}".format(args.seed))
-        torch.manual_seed(args.seed + args.local_rank)
-        torch.cuda.manual_seed(args.seed + args.local_rank)
-        np.random.seed(seed=args.seed + args.local_rank)
-        random.seed(args.seed + args.local_rank)
+        utils.set_seed(args.seed, args.local_rank)
 
         def _worker_init_fn(id):
             np.random.seed(seed=args.seed + args.local_rank + id)

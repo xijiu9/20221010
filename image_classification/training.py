@@ -349,10 +349,11 @@ def train_loop(model_and_loss, optimizer, lr_scheduler, train_loader, val_loader
     if logger is not None:
         epoch_iter = logger.epoch_generator_wrapper(epoch_iter)
     for epoch in epoch_iter:
+        utils.set_seed(args.seed + epoch, args.local_rank)
         config.epoch = epoch
         time_tuple = time.localtime(time.time())
-        print('Epoch {} at Time {}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}:'
-              .format(epoch, time_tuple[0], time_tuple[1], time_tuple[2], time_tuple[3], time_tuple[4], time_tuple[5]))
+        print('Epoch {} with Seed {} at Time {}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}:'
+              .format(epoch, args.seed + epoch, time_tuple[0], time_tuple[1], time_tuple[2], time_tuple[3], time_tuple[4], time_tuple[5]))
         start_time = time.time()
         if not skip_training:
             train(train_loader, model_and_loss, optimizer, lr_scheduler, fp16, logger, epoch, use_amp=use_amp,
