@@ -32,6 +32,16 @@ parser.add_argument('--weight-decay', '--wd', default=3.0517578125e-05, type=flo
 parser.add_argument('--batch-size', type=int, default=128, help='clip gradient to 0.01(CIFAR)')
 parser.add_argument('--optimizer-batch-size', type=int, default=1024, help='clip gradient to 0.01(CIFAR)')
 parser.add_argument('--warmup', default=4, type=int, metavar='E', help='number of warmup epochs')
+
+parser.add_argument("--master_port", default=29500, type=int,
+                    help="Master node (rank 0)'s free port that needs to "
+                         "be used for communciation during distributed "
+                         "training")
+parser.add_argument("--master_addr", default="127.0.0.1", type=str,
+                    help="Master node (rank 0)'s address, should be either "
+                         "the IP address or the hostname of node 0, for "
+                         "single node multi-proc training, the "
+                         "--master_addr can simply be 127.0.0.1")
 args = parser.parse_args()
 
 assert args.gpu_num * args.batch_size == 1000 * args.lr
@@ -84,14 +94,15 @@ if args.amp:
 else:
     amp_control = ''
 
-os.system("python ./multiproc.py --nnodes 1 --node_rank 0 --master_addr '127.0.0.1' \
+os.system("python ./multiproc.py --nnodes 1 --node_rank 0 --master_addr {} --master_port {} \
             --nproc_per_node {} ./main.py --arch {} --gather-checkpoints \
             --batch-size {} --lr {} --optimizer-batch-size {} --resume {}\
             --warmup {} {}  /data/LargeData/Large/ImageNet --workspace ./results/imagenet/{}/models \
             {} --print-freq 400 --clip-grad {} \
             --bbits {} --bwbits {} --abits {} --wbits {} --weight-decay {} --lsqforward {} \
             --twolayers-gradweight {} --twolayers-gradinputt {} --clip-grad {}"
-            .format(args.gpu_num, args.arch,
+            .format(args.master_addr, args.master_port,
+                    args.gpu_num, args.arch,
                     args.batch_size, args.lr, args.optimizer_batch_size, model,
                     args.warmup, arg, args.training_bit,
                     amp_control, args.clip_grad,
