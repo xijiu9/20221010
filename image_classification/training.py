@@ -385,7 +385,7 @@ def train_loop(model_and_loss, optimizer, lr_scheduler, train_loader, val_loader
         if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
             logger.end()
         end_time = time.time()
-        print("Time Cost: {} s".format(end_time - start_time))
+        print("Time Cost: {} min {} s".format((end_time - start_time) // 60, (end_time - start_time) % 60))
 
     print(plt_log.plt_prec1)
     print("The best acc is {}".format(max(plt_log.plt_prec1)))

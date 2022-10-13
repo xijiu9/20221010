@@ -86,9 +86,9 @@ class ResNetBuilder(object):
 
         return bn
 
-    def linear(self, in_planes, out_planes, symm=True):
+    def linear(self, in_planes, out_planes, symm=True, first_layer=False):
         if self.config['linear'] == QLinear:
-            return self.config['linear'](in_planes, out_planes, symm=symm)
+            return self.config['linear'](in_planes, out_planes, symm=symm, first_layer=first_layer)
         elif self.config['linear'] == nn.Linear:
             return self.config['linear'](in_planes, out_planes)
 
@@ -222,7 +222,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(builder, block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(builder, block, 512, layers[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.fc = builder.linear(512 * block.expansion, num_classes)
+        self.fc = builder.linear(512 * block.expansion, num_classes, first_layer=True)
 
     def _make_layer(self, builder, block, planes, blocks, stride=1):
         downsample = None

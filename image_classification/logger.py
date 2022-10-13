@@ -314,7 +314,7 @@ class PLTLOGGER(object):
         if self.dataset == 'cifar10':
             plt.ylim(80, 94)
         elif self.dataset == 'imagenet':
-            plt.ylim(45, 72)
+            plt.ylim(35, 72)
         plt.scatter(self.plt_epoch, self.plt_prec1, s=2)
         plt.title(max(self.plt_prec1))
         plt.savefig(os.path.join(self.save_path, 'valid_curve.png'))

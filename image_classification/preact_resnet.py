@@ -140,7 +140,7 @@ class PreActResNet(nn.Module):
         self.bn = builder.batchnorm(64 * block.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.avgpool = nn.AvgPool2d(8, stride=1)
-        self.fc = builder.linear(64 * block.expansion, num_classes, symm=False)
+        self.fc = builder.linear(64 * block.expansion, num_classes, symm=False, first_layer=True)
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None

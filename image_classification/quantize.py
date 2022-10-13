@@ -200,8 +200,9 @@ class conv2d_act(Function):
 
 class linear_act(Function):
     @staticmethod
-    def forward(ctx, input, weight, bias):
+    def forward(ctx, input, weight, bias, first_layer=False):
         ctx.saved = input, weight, bias
+        ctx.first_layer = first_layer
         return F.linear(input, weight, bias)
 
     @staticmethod
@@ -210,12 +211,13 @@ class linear_act(Function):
         # torch.set_printoptions(profile="full")
         # print(grad_output[:, :])
         # exit(0)
+        first_layer = ctx.first_layer
         torch.set_printoptions(profile="full", linewidth=160)
         # torch.save(grad_output, 'image_classification/ckpt/grad_output_linear_0.pt')
-        grad_output_weight_conditioner = quantize(grad_output, config.weight_gradient_preconditioner(), stochastic=True,
+        grad_output_weight_conditioner = quantize(grad_output, config.weight_gradient_preconditioner(first_layer), stochastic=True,
                                                   info='linear_weight')
 
-        grad_output_active_conditioner = quantize(grad_output, config.activation_gradient_preconditioner(),
+        grad_output_active_conditioner = quantize(grad_output, config.activation_gradient_preconditioner(first_layer),
                                                   stochastic=True, info='linear_active')
 
         # exit(0)
@@ -232,13 +234,13 @@ class linear_act(Function):
 
         # print(torch.linalg.norm(grad_output_flatten_weight, dim=1), len(torch.linalg.norm(grad_output_flatten_weight, dim=1)))
         # print(grad_output_flatten_weight[:, :5], grad_output_flatten_weight.shape)
-        if config.twolayers_gradweight:
+        if config.twolayers_gradweight and not first_layer:
             m1, m2 = twolayer_linearsample_weight(grad_output_flatten_weight, input_flatten)
             grad_weight = m1.t().mm(m2)
         else:
             grad_weight = grad_output_flatten_weight.t().mm(input_flatten)
 
-        if config.twolayers_gradinputt:
+        if config.twolayers_gradinputt and not first_layer:
             I = torch.eye(input.shape[0], device="cuda")
             grad_input = twolayer_linearsample_input(grad_output_flatten_active, I)
 
@@ -251,7 +253,7 @@ class linear_act(Function):
         else:
             grad_bias = None
 
-        return grad_input, grad_weight, grad_bias
+        return grad_input, grad_weight, grad_bias, None
 
 
 class LSQPerTensor(nn.Module):
@@ -366,17 +368,19 @@ class QConv2d(nn.Conv2d):
 class QLinear(nn.Linear):
     """docstring for QConv2d."""
 
-    def __init__(self, in_features, out_features, bias=True, symm=True):
+    def __init__(self, in_features, out_features, bias=True, symm=True, first_layer=False):
         super(QLinear, self).__init__(in_features, out_features, bias)
         self.quantize_input = QuantMeasure()
-
+        self.first_layer = first_layer
+        if first_layer:
+            print("ohhhhhhh linear")
         if config.lsqforward:
             self.lsqweight = LSQPerTensor(config.weight_num_bits, inputtype="weight")
             self.lsqactive = LSQPerTensor(config.activation_num_bits, symm=symm, inputtype="activation")
 
     def forward(self, input):
 
-        if config.quantize_activation:
+        if config.quantize_activation and not self.first_layer:
             if config.lsqforward:
                 qinput = self.lsqactive(input)
             else:
@@ -384,7 +388,7 @@ class QLinear(nn.Linear):
         else:
             qinput = input
 
-        if config.quantize_weights:  # TODO weight quantization scheme...
+        if config.quantize_weights and not self.first_layer:  # TODO weight quantization scheme...
             if config.lsqforward:
                 qweight = self.lsqweight(self.weight)
             else:
@@ -397,7 +401,7 @@ class QLinear(nn.Linear):
         if hasattr(self, 'exact') or not config.quantize_gradient:
             output = F.linear(qinput, qweight, qbias)
         else:
-            output = linear_act.apply(qinput, qweight, qbias)
+            output = linear_act.apply(qinput, qweight, qbias, self.first_layer)
 
         return output
 
