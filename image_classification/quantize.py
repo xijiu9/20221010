@@ -374,7 +374,7 @@ class QLinear(nn.Linear):
         self.first_layer = first_layer
         if first_layer:
             print("ohhhhhhh linear")
-        if config.lsqforward:
+        if config.lsqforward and not self.first_layer:
             self.lsqweight = LSQPerTensor(config.weight_num_bits, inputtype="weight")
             self.lsqactive = LSQPerTensor(config.activation_num_bits, symm=symm, inputtype="activation")
 
